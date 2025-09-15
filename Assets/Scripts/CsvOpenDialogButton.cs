@@ -1,11 +1,13 @@
 using System;
 using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
 #if UNITY_STANDALONE
-using SFB; // UnityStandaloneFileBrowser の名前空間（スタンドアロンでのみインクルード）
+using SFB; // UnityStandaloneFileBrowser
 #endif
 
 public class CsvOpenDialogButton : MonoBehaviour
@@ -17,13 +19,18 @@ public class CsvOpenDialogButton : MonoBehaviour
     public Button openButton;               // ← これを押すとダイアログ
     public TMP_Text statusLabel;            // 読込結果やエラー表示
     public TMP_Text fileNameLabel;          // 選択したファイル名（任意）
-    public TMP_InputField manualPathInput;  // 任意：手動パス入力
+    public TMP_InputField manualPathInput;  // 任意：手動パス入力（Standalone/Editor向け）
 
     [Header("Filters")]
     public bool requireCsvExtension = true;
 
     [Header("Initial Directory")]
     public InitialDirMode initialDirMode = InitialDirMode.LastDir;
+
+#if UNITY_WEBGL && !UNITY_EDITOR
+    // WebGL の JS プラグイン（FilePicker.jslib）と連携
+    [DllImport("__Internal")] private static extern void FilePicker_OpenFileDialog(string gameObjectName, string accept);
+#endif
 
     void Awake()
     {
@@ -38,8 +45,10 @@ public class CsvOpenDialogButton : MonoBehaviour
         Debug.Log("[CsvOpenDialogButton] UNITY_EDITOR: EditorUtility.OpenFilePanel を使用");
 #elif UNITY_STANDALONE
         Debug.Log("[CsvOpenDialogButton] UNITY_STANDALONE: UnityStandaloneFileBrowser(SFB) を使用");
+#elif UNITY_WEBGL
+        Debug.Log("[CsvOpenDialogButton] UNITY_WEBGL: WebGL FilePicker (jslib) を使用");
 #else
-        Debug.Log("[CsvOpenDialogButton] このプラットフォームではOSダイアログ未対応（モバイル/WebGL等）");
+        Debug.Log("[CsvOpenDialogButton] このプラットフォームではOSダイアログ未対応（モバイル等）");
 #endif
     }
 
@@ -72,19 +81,18 @@ public class CsvOpenDialogButton : MonoBehaviour
         return d;
     }
 
-    void OpenDialog()
+    public void OpenDialog()
     {
         if (store == null) { SetStatus("PoseCsvStore が未割り当てです。", true); return; }
         if (openButton) openButton.interactable = false;
 
-        string selectedPath = null;
-        string initialDir = GetInitialDirectory();
-        Debug.Log($"[CsvOpenDialogButton] InitialDir = {initialDir}");
-
 #if UNITY_EDITOR
-        selectedPath = UnityEditor.EditorUtility.OpenFilePanel("CSVを選択", initialDir, "csv");
+        string initialDir = GetInitialDirectory();
+        string selectedPath = UnityEditor.EditorUtility.OpenFilePanel("CSVを選択", initialDir, "csv");
+        HandleSelectedPathOrCancel(selectedPath);
 
 #elif UNITY_STANDALONE
+        string initialDir = GetInitialDirectory();
         try
         {
             var extensions = new[] {
@@ -93,21 +101,35 @@ public class CsvOpenDialogButton : MonoBehaviour
             };
             var paths = StandaloneFileBrowser.OpenFilePanel("CSVを選択", initialDir, extensions, false);
             Debug.Log($"[CsvOpenDialogButton] SFB returned {(paths == null ? "null" : paths.Length.ToString())} results");
-            if (paths != null && paths.Length > 0) selectedPath = paths[0];
+            string selectedPath = (paths != null && paths.Length > 0) ? paths[0] : null;
+            HandleSelectedPathOrCancel(selectedPath);
         }
         catch (Exception ex)
         {
             SetStatus($"SFB呼び出し例外: {ex.Message}", true);
             if (openButton) openButton.interactable = true;
-            return;
         }
 
+#elif UNITY_WEBGL && !UNITY_EDITOR
+        try
+        {
+            // .csv と text/csv を許可
+            FilePicker_OpenFileDialog(gameObject.name, ".csv,text/csv");
+            SetStatus("ブラウザのダイアログを開きました…");
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"WebGLダイアログ呼び出し例外: {ex.Message}", true);
+            if (openButton) openButton.interactable = true;
+        }
 #else
-        SetStatus("このプラットフォームではOSダイアログ未対応です（モバイル/WebGL等）。", true);
+        SetStatus("このプラットフォームではOSダイアログ未対応です。", true);
         if (openButton) openButton.interactable = true;
-        return;
 #endif
+    }
 
+    void HandleSelectedPathOrCancel(string selectedPath)
+    {
         if (string.IsNullOrEmpty(selectedPath))
         {
             SetStatus("ダイアログが閉じられました（キャンセル/失敗）。");
@@ -168,6 +190,45 @@ public class CsvOpenDialogButton : MonoBehaviour
         {
             SetStatus($"手動パス読み込み例外: {ex.Message}", true);
         }
+    }
+
+    // ===== WebGL コールバック =====
+    [Serializable]
+    private class WebGLPickPayload { public string name; public string data; } // data = Base64
+
+    // JS から呼ばれる（成功）
+    public void OnWebGLFilePicked(string payloadJson)
+    {
+        try
+        {
+            var payload = JsonUtility.FromJson<WebGLPickPayload>(payloadJson);
+            if (payload == null || string.IsNullOrEmpty(payload.data))
+                throw new Exception("payloadが空です");
+
+            byte[] bytes = Convert.FromBase64String(payload.data);
+            string text = Encoding.UTF8.GetString(bytes);
+            string virtName = string.IsNullOrEmpty(payload.name) ? "(webgl)" : payload.name;
+
+            if (fileNameLabel) fileNameLabel.text = virtName;
+            store.LoadFromText(text, virtName);
+            SetStatus("読み込み中…");
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"WebGLデコード失敗: {ex.Message}", true);
+            if (openButton) openButton.interactable = true;
+        }
+        finally
+        {
+            if (openButton) openButton.interactable = true;
+        }
+    }
+
+    // JS から呼ばれる（失敗/キャンセル）
+    public void OnWebGLFilePickError(string message)
+    {
+        SetStatus($"WebGLダイアログ失敗/キャンセル: {message}");
+        if (openButton) openButton.interactable = true;
     }
 
     void OnStoreLoaded()

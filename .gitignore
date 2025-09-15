@@ -100,3 +100,5 @@ InitTestScene*.unity*
 /[Aa]ssets/[Ii]nit[Tt]est[Ss]cene*.unity*
 /[Aa]ssets/[Pp]lugins/[Ss]asa[Uu]tility
 /Build
+/Build_WebGL
+/Build_Windows

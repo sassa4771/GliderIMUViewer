@@ -25,6 +25,7 @@ public class CsvOpenDialogButton : MonoBehaviour
     }
     void OnDestroy()
     {
+        if (store != null)
         {
             store.Loaded     -= OnStoreLoaded;
             store.LoadFailed -= OnStoreLoadFailed;

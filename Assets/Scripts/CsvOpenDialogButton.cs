@@ -1,7 +1,5 @@
 using System;
 using System.IO;
-using System.Runtime.InteropServices;
-using System.Text;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -17,7 +15,7 @@ public class CsvOpenDialogButton : MonoBehaviour
     [Header("Refs")]
     public PoseCsvStore store;              // ← loadOnStart=false にして割当
     public Button openButton;               // ← これを押すとダイアログ
-    public TMP_Text statusLabel;            // 読込結果やエラー表示
+    public TMP_Text statusLabel;            // 成功/失敗のみ表示
     public TMP_Text fileNameLabel;          // 選択したファイル名（任意）
     public TMP_InputField manualPathInput;  // 任意：手動パス入力（Standalone/Editor向け）
 
@@ -28,8 +26,8 @@ public class CsvOpenDialogButton : MonoBehaviour
     public InitialDirMode initialDirMode = InitialDirMode.LastDir;
 
 #if UNITY_WEBGL && !UNITY_EDITOR
-    // WebGL の JS プラグイン（FilePicker.jslib）と連携
-    [DllImport("__Internal")] private static extern void FilePicker_OpenFileDialog(string gameObjectName, string accept);
+    [System.Runtime.InteropServices.DllImport("__Internal")]
+    private static extern void FilePicker_OpenFileDialog(string gameObjectName, string accept);
 #endif
 
     void Awake()
@@ -37,6 +35,7 @@ public class CsvOpenDialogButton : MonoBehaviour
         if (openButton) openButton.onClick.AddListener(OpenDialog);
         if (store != null)
         {
+            // 成功/失敗だけ拾う（「読み込み中…」は出さない）
             store.Loaded     += OnStoreLoaded;
             store.LoadFailed += OnStoreLoadFailed;
         }
@@ -87,20 +86,17 @@ public class CsvOpenDialogButton : MonoBehaviour
         if (openButton) openButton.interactable = false;
 
 #if UNITY_EDITOR
-        string initialDir = GetInitialDirectory();
-        string selectedPath = UnityEditor.EditorUtility.OpenFilePanel("CSVを選択", initialDir, "csv");
+        string selectedPath = UnityEditor.EditorUtility.OpenFilePanel("CSVを選択", GetInitialDirectory(), "csv");
         HandleSelectedPathOrCancel(selectedPath);
 
 #elif UNITY_STANDALONE
-        string initialDir = GetInitialDirectory();
         try
         {
-            var extensions = new[] {
+            var exts  = new[] {
                 new ExtensionFilter("CSV", "csv"),
                 new ExtensionFilter("All Files", "*")
             };
-            var paths = StandaloneFileBrowser.OpenFilePanel("CSVを選択", initialDir, extensions, false);
-            Debug.Log($"[CsvOpenDialogButton] SFB returned {(paths == null ? "null" : paths.Length.ToString())} results");
+            var paths = StandaloneFileBrowser.OpenFilePanel("CSVを選択", GetInitialDirectory(), exts, false);
             string selectedPath = (paths != null && paths.Length > 0) ? paths[0] : null;
             HandleSelectedPathOrCancel(selectedPath);
         }
@@ -113,9 +109,8 @@ public class CsvOpenDialogButton : MonoBehaviour
 #elif UNITY_WEBGL && !UNITY_EDITOR
         try
         {
-            // .csv と text/csv を許可
             FilePicker_OpenFileDialog(gameObject.name, ".csv,text/csv");
-            SetStatus("ブラウザのダイアログを開きました…");
+            // 進捗表示はしない（成功/失敗のCBだけ扱う）
         }
         catch (Exception ex)
         {
@@ -132,8 +127,7 @@ public class CsvOpenDialogButton : MonoBehaviour
     {
         if (string.IsNullOrEmpty(selectedPath))
         {
-            SetStatus("ダイアログが閉じられました（キャンセル/失敗）。");
-            TryLoadFromManualInputFallback();
+            SetStatus("キャンセルしました。");
             if (openButton) openButton.interactable = true;
             return;
         }
@@ -153,9 +147,9 @@ public class CsvOpenDialogButton : MonoBehaviour
 
         try
         {
-            store.LoadFromAbsolutePath(selectedPath); // 成否はイベントで受け取る
+            // 同期読み込みなので即時に Loaded が発火する想定。二重表示にならないようここでは何も表示しない。
+            store.LoadFromAbsolutePath(selectedPath);
             if (fileNameLabel) fileNameLabel.text = Path.GetFileName(selectedPath);
-            SetStatus("読み込み中…");
         }
         catch (Exception ex)
         {
@@ -164,78 +158,16 @@ public class CsvOpenDialogButton : MonoBehaviour
         }
     }
 
-    void TryLoadFromManualInputFallback()
-    {
-        if (manualPathInput == null) return;
-        var p = manualPathInput.text?.Trim();
-        if (string.IsNullOrEmpty(p)) return;
-
-        if (!File.Exists(p))
-        {
-            SetStatus("手動入力のパスが存在しません。", true);
-            return;
-        }
-        if (requireCsvExtension && Path.GetExtension(p).ToLowerInvariant() != ".csv")
-        {
-            SetStatus("手動入力はCSV(.csv)のみ対応です。", true);
-            return;
-        }
-        try
-        {
-            store.LoadFromAbsolutePath(p);
-            if (fileNameLabel) fileNameLabel.text = Path.GetFileName(p);
-            SetStatus("手動パスから読み込み中…");
-        }
-        catch (Exception ex)
-        {
-            SetStatus($"手動パス読み込み例外: {ex.Message}", true);
-        }
-    }
-
-    // ===== WebGL コールバック =====
-    [Serializable]
-    private class WebGLPickPayload { public string name; public string data; } // data = Base64
-
-    // JS から呼ばれる（成功）
-    public void OnWebGLFilePicked(string payloadJson)
-    {
-        try
-        {
-            var payload = JsonUtility.FromJson<WebGLPickPayload>(payloadJson);
-            if (payload == null || string.IsNullOrEmpty(payload.data))
-                throw new Exception("payloadが空です");
-
-            byte[] bytes = Convert.FromBase64String(payload.data);
-            string text = Encoding.UTF8.GetString(bytes);
-            string virtName = string.IsNullOrEmpty(payload.name) ? "(webgl)" : payload.name;
-
-            if (fileNameLabel) fileNameLabel.text = virtName;
-            store.LoadFromText(text, virtName);
-            SetStatus("読み込み中…");
-        }
-        catch (Exception ex)
-        {
-            SetStatus($"WebGLデコード失敗: {ex.Message}", true);
-            if (openButton) openButton.interactable = true;
-        }
-        finally
-        {
-            if (openButton) openButton.interactable = true;
-        }
-    }
-
-    // JS から呼ばれる（失敗/キャンセル）
-    public void OnWebGLFilePickError(string message)
-    {
-        SetStatus($"WebGLダイアログ失敗/キャンセル: {message}");
-        if (openButton) openButton.interactable = true;
-    }
-
+    // WebGL 成功: PoseCsvStore からイベント経由で来る
     void OnStoreLoaded()
     {
         if (openButton) openButton.interactable = true;
-        SetStatus($"読み込み完了：{(string.IsNullOrEmpty(store.CurrentPath) ? "(不明)" : Path.GetFileName(store.CurrentPath))}  /  Duration={store.Duration:0.000}s");
+        // 完了だけ表示
+        var name = string.IsNullOrEmpty(store.CurrentPath) ? "(不明)" : Path.GetFileName(store.CurrentPath);
+        SetStatus($"読み込み完了：{name} / {store.Duration:0.000}s");
     }
+
+    // WebGL 失敗/キャンセル: こちらに来る
     void OnStoreLoadFailed(string reason)
     {
         if (openButton) openButton.interactable = true;

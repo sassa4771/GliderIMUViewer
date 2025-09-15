@@ -2,8 +2,17 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Text;
 using UnityEngine;
 using UnityEngine.Networking;
+
+#if UNITY_STANDALONE
+using SFB; // UnityStandaloneFileBrowser
+#endif
+
+#if UNITY_WEBGL && !UNITY_EDITOR
+using System.Runtime.InteropServices;
+#endif
 
 public class PoseCsvStore : MonoBehaviour
 {
@@ -41,7 +50,94 @@ public class PoseCsvStore : MonoBehaviour
     public event Action Loaded;                 // 成功
     public event Action<string> LoadFailed;     // 失敗（理由）
 
-    public void GetSnapshot(out float[] times, out Vector3[] eulersDeg) // グラフ用
+    //=== 追加：プラットフォームに応じたファイルダイアログ ===
+#if UNITY_WEBGL && !UNITY_EDITOR
+    // WebGL の JS プラグイン（FilePicker.jslib）とのブリッジ
+    [DllImport("__Internal")] private static extern void FilePicker_OpenFileDialog(string gameObjectName, string accept);
+#endif
+
+    /// <summary>OS/ブラウザのダイアログを開いてCSVを読み込む（Windows/Mac/Linux/WebGL対応）</summary>
+    public void OpenCsvDialog()
+    {
+#if UNITY_EDITOR
+        string initialDir = GetLastDirOrDefault();
+        string selectedPath = UnityEditor.EditorUtility.OpenFilePanel("CSVを選択", initialDir, "csv");
+        if (!string.IsNullOrEmpty(selectedPath)) LoadFromAbsolutePath(selectedPath);
+        else Debug.Log("[PoseCsvStore] ダイアログキャンセル");
+
+#elif UNITY_STANDALONE
+        try
+        {
+            string initialDir = GetLastDirOrDefault();
+            var exts  = new[] { new ExtensionFilter("CSV", "csv"), new ExtensionFilter("All Files", "*") };
+            var paths = StandaloneFileBrowser.OpenFilePanel("CSVを選択", initialDir, exts, false);
+            string selectedPath = (paths != null && paths.Length > 0) ? paths[0] : null;
+            if (!string.IsNullOrEmpty(selectedPath)) LoadFromAbsolutePath(selectedPath);
+            else Debug.Log("[PoseCsvStore] ダイアログキャンセル(Standalone)");
+        }
+        catch (Exception ex)
+        {
+            LastError = $"SFB呼び出し例外: {ex.Message}";
+            LoadFailed?.Invoke(LastError);
+            Debug.LogError($"[PoseCsvStore] {LastError}");
+        }
+
+#elif UNITY_WEBGL && !UNITY_EDITOR
+        try
+        {
+            // ブラウザのファイル入力を開く（.csv と text/csv を許可）
+            FilePicker_OpenFileDialog(gameObject.name, ".csv,text/csv");
+            Debug.Log("[PoseCsvStore] WebGL FilePicker を呼び出しました");
+        }
+        catch (Exception ex)
+        {
+            LastError = $"WebGLダイアログ呼び出し失敗: {ex.Message}";
+            LoadFailed?.Invoke(LastError);
+            Debug.LogError($"[PoseCsvStore] {LastError}");
+        }
+#else
+        LastError = "このプラットフォームではOSダイアログ未対応です。";
+        LoadFailed?.Invoke(LastError);
+        Debug.LogWarning($"[PoseCsvStore] {LastError}");
+#endif
+    }
+
+    //=== 追加：WebGLからのコールバック（.jslib が SendMessage してくる） ===
+    [Serializable] private class WebGLPickPayload { public string name; public string data; } // data = Base64
+
+    // 成功：JSON { name, data(base64) }
+    public void OnWebGLFilePicked(string payloadJson)
+    {
+        try
+        {
+            var payload = JsonUtility.FromJson<WebGLPickPayload>(payloadJson);
+            if (payload == null || string.IsNullOrEmpty(payload.data))
+                throw new Exception("payloadが空です");
+
+            byte[] bytes = Convert.FromBase64String(payload.data);
+            string text  = Encoding.UTF8.GetString(bytes);
+            string virtName = string.IsNullOrEmpty(payload.name) ? "(webgl)" : payload.name;
+
+            LoadFromText(text, virtName);
+        }
+        catch (Exception ex)
+        {
+            LastError = $"WebGLデコード失敗: {ex.Message}";
+            LoadFailed?.Invoke(LastError);
+            Debug.LogError($"[PoseCsvStore] {LastError}");
+        }
+    }
+
+    // 失敗/キャンセル：文字列メッセージ
+    public void OnWebGLFilePickError(string message)
+    {
+        LastError = $"WebGLダイアログ失敗/キャンセル: {message}";
+        LoadFailed?.Invoke(LastError);
+        Debug.LogWarning($"[PoseCsvStore] {LastError}");
+    }
+
+    //=== グラフ向けスナップショット ===
+    public void GetSnapshot(out float[] times, out Vector3[] eulersDeg)
     {
         int n = _frames.Count;
         times = new float[n];
@@ -78,7 +174,7 @@ public class PoseCsvStore : MonoBehaviour
         return _zero * Quaternion.Slerp(f0.q, f1.q, u);
     }
 
-    // ===== 外部から読み込み =====
+    //=== 外部から読み込み（パス/テキスト/URL等） ===
     public void LoadFromAbsolutePath(string absolutePath)
     {
         if (string.IsNullOrEmpty(absolutePath))
@@ -125,7 +221,7 @@ public class PoseCsvStore : MonoBehaviour
         return d;
     }
 
-    // ===== 内部 =====
+    //=== 内部 ===
     struct Frame { public float t; public Quaternion q; }
     readonly List<Frame> _frames = new List<Frame>(4096);
     Quaternion _zero = Quaternion.identity;
@@ -137,7 +233,7 @@ public class PoseCsvStore : MonoBehaviour
         else LoadFromAbsolute();
     }
 
-    // ★ StreamingAssets を常に URI 正規化
+    // StreamingAssets → 常に URI 化してから取得
     System.Collections.IEnumerator LoadFromStreamingAssets()
     {
         string combined = System.IO.Path.Combine(Application.streamingAssetsPath, filePath);
@@ -240,11 +336,13 @@ public class PoseCsvStore : MonoBehaviour
             return;
         }
 
+        // t=0 揃え
         float t0 = tmpTimes[0];
         for (int i = 0; i < tmpTimes.Count; i++) tmpTimes[i] -= t0;
 
         bool assumeRad = anglesAreRadians || (autoDetectAngleUnits && maxAbs <= 6.5f);
 
+        // Quaternion へ変換（軸割当＆符号）
         for (int i = 0; i < tmpAngles.Count; i++)
         {
             float r = tmpAngles[i].x, p = tmpAngles[i].y, y = tmpAngles[i].z;
@@ -278,7 +376,7 @@ public class PoseCsvStore : MonoBehaviour
         s = s.Replace(',', '.');
         return float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out v);
     }
-    static void Unwrap(ref Vector3[] arr)
+    static void Unwrap(ref Vector3[] arr) // ±180°跨ぎの連続化
     {
         float ox=0, oy=0, oz=0;
         for (int i = 1; i < arr.Length; i++)

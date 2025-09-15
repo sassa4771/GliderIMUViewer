@@ -137,14 +137,13 @@ public class PoseCsvStore : MonoBehaviour
         else LoadFromAbsolute();
     }
 
-    // ★ ここを修正：常に正しいURIにしてからUnityWebRequestへ渡す
+    // ★ StreamingAssets を常に URI 正規化
     System.Collections.IEnumerator LoadFromStreamingAssets()
     {
-        // 物理パス or 既にURL どちらでも URI に正規化
         string combined = System.IO.Path.Combine(Application.streamingAssetsPath, filePath);
         string url = (combined.Contains("://") || combined.Contains(":///"))
             ? combined
-            : new System.Uri(combined).AbsoluteUri; // file:///C:/... / file:///... 形式に
+            : new System.Uri(combined).AbsoluteUri;
 
         using (var req = UnityWebRequest.Get(url))
         {

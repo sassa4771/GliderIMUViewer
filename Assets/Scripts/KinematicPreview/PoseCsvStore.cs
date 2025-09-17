@@ -35,6 +35,9 @@ public class PoseCsvStore : MonoBehaviour
     public Axis yawAxis = Axis.Y;
     public int rollSign = +1, pitchSign = +1, yawSign = +1;
 
+    [Tooltip("Yaw の符号を強制反転します（入力側で逆だった場合の補正用）。")]
+    public bool flipYawSign = false; // ★追加：Yaw反転トグル
+
     [Header("Normalization")]
     public bool zeroAtStart = true;       // 先頭姿勢を基準ゼロに
 
@@ -50,7 +53,6 @@ public class PoseCsvStore : MonoBehaviour
     public event Action Loaded;                 // 成功
     public event Action<string> LoadFailed;     // 失敗（理由）
 
-    //=== 追加：プラットフォームに応じたファイルダイアログ ===
 #if UNITY_WEBGL && !UNITY_EDITOR
     // WebGL の JS プラグイン（FilePicker.jslib）とのブリッジ
     [DllImport("__Internal")] private static extern void FilePicker_OpenFileDialog(string gameObjectName, string accept);
@@ -102,7 +104,7 @@ public class PoseCsvStore : MonoBehaviour
 #endif
     }
 
-    //=== 追加：WebGLからのコールバック（.jslib が SendMessage してくる） ===
+    //=== WebGLからのコールバック（.jslib が SendMessage してくる） ===
     [Serializable] private class WebGLPickPayload { public string name; public string data; } // data = Base64
 
     // 成功：JSON { name, data(base64) }
@@ -349,9 +351,13 @@ public class PoseCsvStore : MonoBehaviour
             if (assumeRad) { r *= Mathf.Rad2Deg; p *= Mathf.Rad2Deg; y *= Mathf.Rad2Deg; }
 
             var eul = Vector3.zero;
-            eul[(int)rollAxis]  = r * rollSign;
-            eul[(int)pitchAxis] = p * pitchSign;
-            eul[(int)yawAxis]   = y * yawSign;
+            int signR = rollSign;
+            int signP = pitchSign;
+            int signY = yawSign * (flipYawSign ? -1 : 1); // ★ここで反転を適用
+
+            eul[(int)rollAxis]  = r * signR;
+            eul[(int)pitchAxis] = p * signP;
+            eul[(int)yawAxis]   = y * signY;
 
             _frames.Add(new Frame { t = tmpTimes[i], q = Quaternion.Euler(eul) });
         }

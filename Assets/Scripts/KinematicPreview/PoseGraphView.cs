@@ -11,11 +11,11 @@ public class PoseGraphView : Graphic
     public PosePlaybackController controller;
 
     [Header("Series")]
-    public bool showRoll = true, showPitch = true, showYaw = true;
+    public bool showRoll = true, showYaw = true, showPitch = true;
     [Range(0.5f, 10f)] public float thickness = 2f;
     public Color rollColor  = new Color(0.90f, 0.25f, 0.25f, 1f);
-    public Color pitchColor = new Color(0.25f, 0.85f, 0.35f, 1f);
-    public Color yawColor   = new Color(0.25f, 0.45f, 0.95f, 1f);
+    public Color yawColor = new Color(0.25f, 0.85f, 0.35f, 1f);
+    public Color pitchColor   = new Color(0.25f, 0.45f, 0.95f, 1f);
 
     [Header("Axes")]
     public bool autoYRange = true;
@@ -75,8 +75,8 @@ public class PoseGraphView : Graphic
         var series = BuildSeries(rect);
         int idx = 0;
         if (showRoll)  DrawPolyline(vh, series[idx++], rollColor,  thickness);
-        if (showPitch) DrawPolyline(vh, series[idx++], pitchColor, thickness);
-        if (showYaw)   DrawPolyline(vh, series[idx++], yawColor,   thickness);
+        if (showYaw) DrawPolyline(vh, series[idx++], yawColor, thickness);
+        if (showPitch)   DrawPolyline(vh, series[idx++], pitchColor,   thickness);
 
         if (drawCursor && controller != null)
         {
@@ -103,8 +103,8 @@ public class PoseGraphView : Graphic
             return lst;
         }
         if (showRoll)  res.Add(toList(0));
-        if (showPitch) res.Add(toList(1));
-        if (showYaw)   res.Add(toList(2));
+        if (showYaw) res.Add(toList(1));
+        if (showPitch)   res.Add(toList(2));
         return res;
     }
 

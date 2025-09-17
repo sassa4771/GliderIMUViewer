@@ -430,7 +430,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: IMU Fligh Viewer
+  m_text: Glider IMU Viewer
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
@@ -439,8 +439,8 @@ MonoBehaviour:
   m_fontMaterials: []
   m_fontColor32:
     serializedVersion: 2
-    rgba: 4294931712
-  m_fontColor: {r: 0, g: 0.45709896, b: 1, a: 1}
+    rgba: 4278190080
+  m_fontColor: {r: 0, g: 0, b: 0, a: 1}
   m_enableVertexGradient: 0
   m_colorMode: 3
   m_fontColorGradient:
@@ -566,7 +566,9 @@ MonoBehaviour:
   openButton: {fileID: 307351794}
   statusLabel: {fileID: 1544705095}
   fileNameLabel: {fileID: 203125302}
+  manualPathInput: {fileID: 0}
   requireCsvExtension: 1
+  initialDirMode: 0
 --- !u!225 &307351793
 CanvasGroup:
   m_ObjectHideFlags: 0
@@ -1115,8 +1117,8 @@ MonoBehaviour:
   m_fontMaterials: []
   m_fontColor32:
     serializedVersion: 2
-    rgba: 4278190335
-  m_fontColor: {r: 1, g: 0, b: 0, a: 1}
+    rgba: 4280098231
+  m_fontColor: {r: 0.7169812, g: 0.11498743, b: 0.11498743, a: 1}
   m_enableVertexGradient: 0
   m_colorMode: 3
   m_fontColorGradient:
@@ -2323,8 +2325,8 @@ MonoBehaviour:
   m_fontMaterials: []
   m_fontColor32:
     serializedVersion: 2
-    rgba: 4278255371
-  m_fontColor: {r: 0.044460773, g: 1, b: 0, a: 1}
+    rgba: 4289485848
+  m_fontColor: {r: 0.09522952, g: 0.35966137, b: 0.67295593, a: 1}
   m_enableVertexGradient: 0
   m_colorMode: 3
   m_fontColorGradient:
@@ -2566,12 +2568,12 @@ MonoBehaviour:
   store: {fileID: 1673250872}
   controller: {fileID: 970049042}
   showRoll: 1
-  showPitch: 1
   showYaw: 1
+  showPitch: 1
   thickness: 2
-  rollColor: {r: 0.9, g: 0.25, b: 0.25, a: 1}
-  pitchColor: {r: 0.25, g: 0.85, b: 0.35, a: 1}
-  yawColor: {r: 0.25, g: 0.45, b: 0.95, a: 1}
+  rollColor: {r: 0.7176471, g: 0.10980393, b: 0.10980393, a: 1}
+  yawColor: {r: 0.18039216, g: 0.5803922, b: 0.08627451, a: 1}
+  pitchColor: {r: 0.08627451, g: 0.35686275, b: 0.6745098, a: 1}
   autoYRange: 1
   fixedYRange: {x: -90, y: 90}
   maxPointsPerLine: 2000
@@ -2798,8 +2800,8 @@ MonoBehaviour:
   m_faceColor:
     serializedVersion: 2
     rgba: 4294967295
-  m_fontSize: 30
-  m_fontSizeBase: 30
+  m_fontSize: 25
+  m_fontSizeBase: 25
   m_fontWeight: 400
   m_enableAutoSizing: 0
   m_fontSizeMin: 18
@@ -3054,8 +3056,8 @@ MonoBehaviour:
   m_faceColor:
     serializedVersion: 2
     rgba: 4294967295
-  m_fontSize: 20
-  m_fontSizeBase: 20
+  m_fontSize: 15
+  m_fontSizeBase: 15
   m_fontWeight: 400
   m_enableAutoSizing: 0
   m_fontSizeMin: 18
@@ -3172,6 +3174,7 @@ MonoBehaviour:
   rollSign: 1
   pitchSign: 1
   yawSign: 1
+  flipYawSign: 1
   zeroAtStart: 1
   loadOnStart: 1
 --- !u!4 &1673250873
@@ -3255,8 +3258,8 @@ MonoBehaviour:
   m_fontMaterials: []
   m_fontColor32:
     serializedVersion: 2
-    rgba: 4294926336
-  m_fontColor: {r: 0, g: 0.37642574, b: 1, a: 1}
+    rgba: 4279604269
+  m_fontColor: {r: 0.17538294, g: 0.57861626, b: 0.08187958, a: 1}
   m_enableVertexGradient: 0
   m_colorMode: 3
   m_fontColorGradient:

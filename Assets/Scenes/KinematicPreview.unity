@@ -813,7 +813,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0c9a2fae0e4a11141856a1a13f20dc23, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  target: {x: 0, y: 0, z: 0}
+  target: {fileID: 3986829318965923761}
+  targetOffset: {x: 0, y: 0, z: 0}
+  followTarget: 1
+  requirePointerOnTargetToStart: 0
+  pointerHitMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
   dragMouseButton: 0
   yawSpeed: 5
   pitchSpeed: 5
@@ -826,6 +832,8 @@ MonoBehaviour:
   pinchZoomSpeed: 0.01
   moveDamping: 0.12
   rotDamping: 0.1
+  fitOnStart: 1
+  fitMargin: 1.2
 --- !u!1 &410087039
 GameObject:
   m_ObjectHideFlags: 0
@@ -3912,6 +3920,11 @@ PrefabInstance:
       insertIndex: -1
       addedObject: {fileID: 1662618407}
   m_SourcePrefab: {fileID: 100100000, guid: 4dbb6d55db7270947a5c425b7f016da5, type: 3}
+--- !u!4 &3986829318965923761 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 2073430801022528628, guid: 4dbb6d55db7270947a5c425b7f016da5, type: 3}
+  m_PrefabInstance: {fileID: 3986829318965923760}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

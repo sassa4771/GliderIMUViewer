@@ -2,9 +2,19 @@
 
 GliderIMUViewer is a Unity-based application for visualizing Inertial Measurement Unit (IMU) pose data from CSV files. It provides interactive graph visualization of roll, pitch, and yaw angles with real-time playback capabilities.
 
+![GliderIMUViewer Demo](GliderIMUViewerDemo.gif)
+
+## Quick Start
+
+**Pre-built Windows executable is available in [Releases](https://github.com/sassa4771/GliderIMUViewer/releases)** - Download and run immediately without Unity installation!
+
 ## Overview
 
 This application enables researchers, engineers, and developers to analyze and visualize orientation data captured from IMU sensors, particularly those used in glider or aircraft applications. The viewer supports multiple coordinate systems, angle units (degrees/radians), and deploys across multiple platforms including Windows, macOS, Linux standalone builds, and WebGL.
+
+### Integration with espnow-uart-bridge
+
+This viewer works seamlessly with [espnow-uart-bridge](https://github.com/sassa4771/espnow-uart-bridge) for wireless IMU data collection. The espnow-uart-bridge project enables ESP-NOW wireless communication between ESP32 devices and outputs IMU data in CSV format compatible with GliderIMUViewer.
 
 ## Features
 
@@ -63,8 +73,14 @@ The application expects CSV files with the following structure:
 
 ### Required Columns
 
-- **Time column**: `t_ms` (milliseconds) or `dt_ms` (delta time in milliseconds)
+**IMPORTANT: Column names must match exactly** (case-insensitive). The default expected column names are:
+
+- **Time column**: `t_ms` (time in milliseconds) **OR** `dt_ms` (delta time in milliseconds)
+  - If using `t_ms`: Absolute timestamp in milliseconds (e.g., 0, 10, 20, 30...)
+  - If using `dt_ms`: Time increment in milliseconds between rows (e.g., 10, 10, 10...)
 - **Angle columns**: `roll`, `pitch`, `yaw`
+  - These exact names are required by default
+  - Angles can be in degrees or radians (auto-detected or manually configured)
 
 ### Optional Columns
 
@@ -80,6 +96,19 @@ t_ms,roll,pitch,yaw,ax,ay,az
 20,1.0,0.4,0.2,0.2,0.0,9.79
 ...
 ```
+
+### Custom Column Names
+
+If your CSV uses different column names, you can configure them in the Unity Editor:
+
+1. Select the GameObject with the `PoseCsvStore` component
+2. In the Inspector, under "CSV" section, modify:
+   - `Time Column` (default: "t_ms")
+   - `Dt Column` (default: "dt_ms")
+   - `Roll Column` (default: "roll")
+   - `Pitch Column` (default: "pitch")
+   - `Yaw Column` (default: "yaw")
+   - `Ax Column`, `Ay Column`, `Az Column` for acceleration (optional)
 
 ### Configuration Options
 

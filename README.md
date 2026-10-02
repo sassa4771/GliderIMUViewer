@@ -1,6 +1,7 @@
 # GliderIMUViewer
 
 GliderIMUViewer is a Unity-based application for visualizing Inertial Measurement Unit (IMU) pose data from CSV files. It provides interactive graph visualization of roll, pitch, and yaw angles with real-time playback capabilities.
+It can also show the attitude **live** from telemetry received over UDP (see [Realtime UDP Preview](#realtime-udp-preview)).
 
 ![GliderIMUViewer Demo](GliderIMUViewerDemo.gif)
 
@@ -21,6 +22,7 @@ This viewer works seamlessly with [espnow-uart-bridge](https://github.com/sassa4
 - **CSV File Loading**: Load IMU pose data from CSV files with cross-platform file dialog support
 - **Interactive Graph Visualization**: Display roll, pitch, and yaw angles as time-series graphs
 - **Real-time Playback**: Control playback timing with visual cursor tracking
+- **Realtime UDP Preview**: Show the attitude live from telemetry received over UDP (glider serial lines, JSON or OSC) in the `RealtimePreview` scene
 - **Flexible Data Format**: Support for various CSV formats with configurable column names
 - **Angle Unit Detection**: Automatic detection of degrees vs radians
 - **Coordinate System Mapping**: Configurable axis mapping and sign conventions
@@ -44,6 +46,7 @@ This viewer works seamlessly with [espnow-uart-bridge](https://github.com/sassa4
 Assets/
 ├── Scenes/
 │   ├── KinematicPreview.unity      # Main IMU visualization scene
+│   ├── RealtimePreview.unity       # Live attitude display from UDP telemetry
 │   └── FlightSimulation.unity      # Flight simulation scene
 ├── Scripts/
 │   ├── CsvOpenDialogButton.cs      # File selection UI component
@@ -54,6 +57,14 @@ Assets/
 │   │   ├── PoseApplier.cs          # Apply pose to 3D objects
 │   │   ├── OrbitAroundOrigin.cs    # Camera orbit control
 │   │   └── UIShowHide.cs           # UI visibility control
+│   ├── RealtimePreview/
+│   │   ├── UdpTelemetryReceiver.cs # UDP reception
+│   │   ├── TelemetryParser.cs      # DAT/HDR/LOG lines, JSON, OSC and CSV parsing
+│   │   ├── AttitudeMath.cs         # roll/pitch/yaw <-> rotation, axis mapping
+│   │   ├── RealtimePoseStore.cs    # Latest pose, zeroing, history, statistics
+│   │   ├── RealtimePoseApplier.cs  # Apply pose to 3D objects
+│   │   ├── RealtimeGraphView.cs    # Scrolling graph
+│   │   └── RealtimeHud.cs          # Status display and controls
 │   └── FlightSimulation/
 │       ├── GliderAero.cs           # Glider aerodynamics
 │       ├── GliderKinematicByPlayback.cs  # Playback-based kinematics
@@ -65,6 +76,12 @@ Assets/
 ├── StreamingAssets/                # Sample CSV files
 └── Settings/
     └── Mobile_RPAsset.asset        # URP rendering configuration
+Tools/
+├── udp_test_sender.py              # Test sender for the RealtimePreview scene (no hardware needed)
+└── serial_udp_bridge.py            # Forwards the glider's serial lines to UDP
+Docs/
+├── RealtimeUdp_ja.md               # Guide for the sender side of the RealtimePreview scene (Japanese)
+└── viewer_serialsend_udp.patch     # Reference patch for the glider repository's viewer
 ```
 
 ## CSV File Format
@@ -163,6 +180,101 @@ Select the GameObject with the `PoseCsvStore` component and configure:
 
 3. **Normalization**:
    - Enable "Zero At Start" to subtract initial pose
+
+## Realtime UDP Preview
+
+`Assets/Scenes/RealtimePreview.unity` shows the attitude of a glider **live**. Instead of loading a CSV file it listens on a UDP port and applies every received roll / pitch / yaw sample to the 3D model, with a scrolling graph and a status display.
+
+```
+glider (XIAO + ESP32) --ESP-NOW--> ground ESP32 --USB serial--> Python on the PC --UDP--> Unity (RealtimePreview)
+```
+
+It is designed to be fed by the Python tools of [Glider-Control_Cluster-Comunication](https://github.com/IPTeCA/Glider-Control_Cluster-Comunication), but anything that can send a UDP datagram works. A guide for the sender side (in Japanese) is in [Docs/RealtimeUdp_ja.md](Docs/RealtimeUdp_ja.md).
+
+### Quick start (no hardware needed)
+
+1. Open `Assets/Scenes/RealtimePreview.unity` and press Play. The status line shows `WAITING  UDP port 9000`.
+2. In a terminal, run the bundled test sender (Python 3.10+, standard library only):
+   ```bash
+   python Tools/udp_test_sender.py
+   ```
+3. The model starts moving and the status line changes to `LIVE  30.0 Hz  from 127.0.0.1:... [DAT]`.
+
+### What to send
+
+Send **one message per datagram** to UDP port 9000 of the PC running Unity. The format is detected per datagram:
+
+| Format | Example payload | Notes |
+|---|---|---|
+| Glider serial lines, unchanged | `DAT,1234,56789,33.0,0.01,...`<br>`HDR,1,GLDR,fields=dt_ms,ax,...`<br>`LOG,mode:Manual` | Recommended. Values are named by the last `HDR` (`fields=`). Until an `HDR` arrives, `dt_ms,ax,ay,az,gx,gy,gz,roll,pitch,yaw,s0,s1,s2` is assumed, so re-send `HDR` every few seconds |
+| JSON | `{"seq":1234,"t_ms":56789,"roll":1.5,"pitch":-2.3,"yaw":180.0}` | Named values. `seq` and `t_ms` are optional. `{"log":"text"}` for log lines |
+| OSC | `/plane/data` with floats `roll pitch yaw sv1 sv3` | What `viewer_serialsend.py --osc-ip <PC> --osc-port 9000` already sends. Only the address `/plane/data` is accepted by default |
+| Numbers only | `1.5,-2.3,180.0` | By position: roll, pitch, yaw (at least three numbers) |
+| key:value | `roll:1.5,pitch:-2.3,yaw:180.0` | |
+
+Angles are in degrees. A minimal Python sender:
+
+```python
+import socket
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.sendto(line.encode("utf-8"), ("127.0.0.1", 9000))   # line = "DAT,..." exactly as read from the serial port
+```
+
+[Docs/viewer_serialsend_udp.patch](Docs/viewer_serialsend_udp.patch) adds this (`--udp-ip` / `--udp-port`) to `viewer_serialsend.py` of the glider repository.
+
+> The "Cluster OSC" output of `logger_gui.py` does **not** carry attitude with the current `DAT` firmware (it sends the first five numbers of each line: `seq, t_ms, dt_ms, ax, ay`). The viewer rejects such values and shows `NO ATTITUDE ... values out of range`.
+
+### Bundled Python tools (`Tools/`)
+
+| Script | Purpose |
+|---|---|
+| `udp_test_sender.py` | Sends synthetic glider-like motion, or replays a recorded CSV in real time (`--csv Assets/StreamingAssets/out_20250912-152517.csv --loop`). Formats: `--format dat|json|osc|csv`. Can simulate a bad link (`--loss 0.1 --jitter-ms 30 --burst 3`) |
+| `serial_udp_bridge.py` | Reads the `HDR` / `DAT` / `LOG` lines from the ground ESP32's serial port and forwards each one as a UDP datagram (`--serial COM3 [--host <PC> --port 9000]`). Requires `pip install pyserial`. Only one program can open a COM port, so close other serial viewers first |
+
+### Controls
+
+| Control | Action |
+|---|---|
+| `Pause` button / Space | Freeze / resume the display (reception continues) |
+| `Zero` button / Z | Take the current heading as 0 (in `Level` mode, also take the current tilt as level) |
+| `Zero: Yaw` button | Cycle the zero mode: `Yaw` (only the heading is zeroed; roll and pitch stay as received) → `Level` (additionally, the tilt at the moment of `Zero` counts as level: put the glider level and press `Zero` to cancel a tilted IMU mounting) → `Off` (values as received) |
+| `IMU X: tail` button | Cycle the IMU mounting / axis mapping: `IMU X: tail` → `IMU X: nose` → `Legacy map` (see below) |
+| Click the `Roll` / `Pitch` / `Yaw` label | Show / hide that line in the graph (e.g. hide yaw to see roll and pitch in more detail) |
+| `UDP port` + `Set` | Listen on another port (remembered in builds) |
+| F1 / the button at the top right | Hide / show the UI |
+| Drag / mouse wheel | Orbit / zoom the camera |
+
+The status line shows `WAITING` (nothing received yet), `LIVE <rate> from <sender> [format]`, `NO DATA <seconds>` (stream interrupted; the model keeps its last pose), `NO ATTITUDE <reason>` (datagrams arrive but cannot be used as roll / pitch / yaw) or `ERROR` (for example when the port is already used by another application).
+
+### Axis mapping (IMU mounting)
+
+The glider model has its fuselage along Z (nose at -Z), its wing span along X and up along Y. The viewer composes the rotation as yaw → pitch → roll, which is how the firmware's Madgwick filter defines its angles, and rotates **roll about the fuselage axis** and **pitch about the wing-span axis**. Which way positive roll and pitch go depends on how the IMU is mounted:
+
+| Button | IMU mounting | Check with the real glider |
+|---|---|---|
+| `IMU X: tail` (default) | +X toward the tail (current firmware: `ax` goes negative at launch) | nose up → pitch increases; right wing down → roll decreases |
+| `IMU X: nose` | +X toward the nose (the hardware that recorded the sample CSV) | nose up → pitch decreases; right wing down → roll increases |
+| `Legacy map` | Same assignment and composition as the KinematicPreview scene (roll→X, pitch→Z, yaw→Y, `Quaternion.Euler`) | Looks exactly like CSV playback |
+
+Hold the glider, raise its nose, then lower its right wing: if the model does the same, the mapping is right. Note that the KinematicPreview mapping rotates roll about the wing-span axis of this model, so with a fuselage-aligned IMU roll and pitch appear swapped there; `Legacy map` exists for parity with that scene.
+
+In builds the selected mapping is remembered. In the Editor, set the default with the context menu of the `RealtimePoseStore` component (`Axis preset: ...`) or edit its `Axis Map`, and save the scene.
+
+### Settings
+
+Select the objects in the scene to adjust them in the Inspector:
+
+- **UdpTelemetryReceiver**: `Port`, default field names for `DAT` lines without `HDR`, field order for positional formats (OSC / numbers only), `Osc Address Filter`, `Log Unparsed` for debugging a sender.
+- **RealtimePoseStore**: field names, degrees / radians, `Axis Map`, `Compose Order`, `Zero Mode` (also `Relative`: the rotation relative to the zero pose, the same calculation as `zeroAtStart` in KinematicPreview), sanity limit for angles (`Max Abs Angle`).
+- **RealtimePoseApplier** (on the glider model): `Smoothing Time`.
+- **RealtimeGraphView**: time window (default 30 s), fixed or automatic Y range.
+
+### Notes
+
+- UDP reception needs the Editor or a standalone build. **WebGL builds cannot receive UDP**; the scene then only shows an error message.
+- The scene is not in the build scene list. To build a realtime viewer, add `RealtimePreview` in *File > Build Profiles* (*Build Settings* in older Unity versions) and put it first to make it the start scene.
+- Sending from the same PC (`127.0.0.1`) needs no firewall change. When sending from another PC, use the address shown after `this PC:` in the status line; the firewall of the receiving PC must allow inbound UDP for the Unity Editor or the built application. The Unity Editor often has an inbound *Block* rule for "Public" networks (`Unity <version> Editor` in the Windows Firewall inbound rules): switch the network to "Private" or change that rule.
+- Yaw from an IMU without magnetometer drifts; press `Zero` to re-align the heading.
 
 ## Key Components
 

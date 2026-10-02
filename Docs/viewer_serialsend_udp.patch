@@ -1,0 +1,93 @@
+--- a/host/python/viewer_serialsend.py
++++ b/host/python/viewer_serialsend.py
+@@ -5,6 +5,7 @@
+ from __future__ import annotations
+ import argparse
+ import csv
++import socket
+ import sys
+ import threading
+ import time
+@@ -77,7 +78,7 @@
+ 
+ # --- Serial Reader Thread ---
+ class SerialReader(threading.Thread):
+-    def __init__(self, port, baud, out_queue, save_csv=None, reconnect=True):
++    def __init__(self, port, baud, out_queue, save_csv=None, reconnect=True, udp_addr=None):
+         super().__init__(daemon=True)
+         self.port = port
+         self.baud = baud
+@@ -90,6 +91,12 @@
+         self._fields = []
+         self._header_written = False
+ 
++        # Raw UDP forwarding: every HDR/DAT/LOG line is sent unchanged as one datagram.
++        self._udp_addr = udp_addr
++        self._udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) if udp_addr else None
++        self._last_hdr = None
++        self._dat_count = 0
++
+         if save_csv:
+             # Append timestamp to filename for uniquely identifiable logs
+             p = Path(save_csv)
+@@ -132,15 +139,22 @@
+ 
+                     if line.startswith("HDR,"):
+                         self._parse_hdr(line)
++                        self._last_hdr = line
++                        self._udp_send(line)
+                         self.out_queue.put(("HDR", line))
+-                    
++
+                     elif line.startswith("DAT,"):
++                        self._dat_count += 1
++                        if self._last_hdr and self._dat_count % 60 == 0:
++                            self._udp_send(self._last_hdr)  # repeat HDR (~2 s) for receivers that start late
++                        self._udp_send(line)
+                         dp = self._parse_dat(line)
+                         if dp:
+                             self._log_csv(dp)
+                             self.out_queue.put(("DAT", dp))
+ 
+                     elif line.startswith("LOG,"):
++                        self._udp_send(line)
+                         self.out_queue.put(("LOG", line[4:]))
+                     
+                 else:
+@@ -152,6 +166,13 @@
+                 if not self.reconnect: break
+                 time.sleep(2)
+ 
++    def _udp_send(self, line):
++        if self._udp:
++            try:
++                self._udp.sendto(line.encode("utf-8"), self._udp_addr)
++            except OSError:
++                pass
++
+     def _parse_hdr(self, line):
+         try:
+             payload = line.split("fields=")[1]
+@@ -259,7 +280,10 @@
+ # --- Main Viewer ---
+ def run_viewer(args):
+     q = Queue()
+-    reader = SerialReader(args.port, args.baud, q, args.save)
++    udp_addr = (args.udp_ip, args.udp_port) if args.udp_ip else None
++    reader = SerialReader(args.port, args.baud, q, args.save, udp_addr=udp_addr)
++    if udp_addr:
++        print(f"[UDP] Forwarding raw HDR/DAT/LOG lines to {args.udp_ip}:{args.udp_port}")
+     reader.start()
+     
+     # Initialize OSC sender if enabled
+@@ -459,6 +483,10 @@
+     # OSC options
+     p.add_argument("--osc-ip", type=str, default="10.227.81.102", help="OSC server IP address (default: 10.227.81.102)")
+     p.add_argument("--osc-port", type=int, default=9000, help="OSC server port (default: 9000)")
++
++    # Raw UDP forwarding (e.g. to GliderIMUViewer / Unity)
++    p.add_argument("--udp-ip", type=str, default=None, help="Forward raw HDR/DAT/LOG lines to this IP via UDP (off if omitted)")
++    p.add_argument("--udp-port", type=int, default=9000, help="UDP port for --udp-ip (default: 9000)")
+     
+     # CSV replay mode
+     p.add_argument("--replay-csv", type=str, default=None, help="CSV file to replay to OSC")
